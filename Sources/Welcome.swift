@@ -53,6 +53,8 @@ struct WelcomeView: View {
     @State private var isConnecting = false
     @State private var problem: Credentials.ReadError?
     @State private var connected = false
+    @State private var opensAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var loginMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -117,11 +119,17 @@ struct WelcomeView: View {
                 }
                 .font(.system(size: 12))
                 Toggle("Open Claude Usage at login", isOn: Binding(
-                    get: { SMAppService.mainApp.status == .enabled },
-                    set: { try? $0 ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }))
+                    get: { opensAtLogin },
+                    set: setOpensAtLogin))
                     .toggleStyle(.checkbox)
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.ink2)
+                if let loginMessage {
+                    Text(loginMessage)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             } else if let problem {
                 advice(for: problem)
             } else {
@@ -194,6 +202,22 @@ struct WelcomeView: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 6).fill(Palette.banner))
+    }
+
+    /// macOS can accept the registration and still park it behind an approval switch,
+    /// so report the status back rather than assuming the toggle took effect.
+    private func setOpensAtLogin(_ enabled: Bool) {
+        do {
+            try enabled ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
+            loginMessage = nil
+        } catch {
+            loginMessage = "Couldn't change the login item: \(error.localizedDescription)"
+        }
+        let status = SMAppService.mainApp.status
+        opensAtLogin = status == .enabled
+        if status == .requiresApproval {
+            loginMessage = "Approve Claude Usage in System Settings › General › Login Items."
+        }
     }
 
     private func connect() async {

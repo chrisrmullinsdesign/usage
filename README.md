@@ -113,9 +113,13 @@ drawn in CoreGraphics, not pasted in from a design tool.
 Untick **Open at login**, click **Quit**, then:
 
 ```sh
-rm -rf /Applications/ClaudeUsage.app ~/Library/Logs/ClaudeUsage.log
+rm -rf /Applications/ClaudeUsage.app ~/Applications/ClaudeUsage.app
+rm -f ~/Library/Logs/ClaudeUsage.log
 defaults delete com.chrismullins.ClaudeUsage
 ```
+
+(The DMG installs to `/Applications`; `./build.sh --install` puts a build in `~/Applications`.
+Removing both covers either route.)
 
 ## Source map
 

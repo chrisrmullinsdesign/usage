@@ -15,6 +15,8 @@ set -euo pipefail
 cd "${0:A:h}/.."
 
 NOTARY_PROFILE="${NOTARY_PROFILE:-ClaudeUsage}"
+NOTARIZE=1
+[[ "${1:-}" == "--no-notarize" ]] && NOTARIZE=0
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Info.plist)
 APP="build/ClaudeUsage.app"
 DMG="build/ClaudeUsage-${VERSION}.dmg"
@@ -22,14 +24,24 @@ STAGE="build/dmg"
 
 # 1. Build and sign. A release must carry a real Developer ID, never an ad-hoc signature.
 ./build.sh
-if ! codesign -dv "$APP" 2>&1 | grep -q '^TeamIdentifier=[A-Z0-9]'; then
+# Captured once rather than piped: `grep -q` exits early, and under `pipefail` the
+# resulting SIGPIPE on codesign would fail the check even when the match succeeded.
+SIGNATURE=$(codesign -dvv "$APP" 2>&1)
+if ! grep -q '^TeamIdentifier=[A-Z0-9]' <<< "$SIGNATURE"; then
   echo "error: $APP is ad-hoc signed. A release needs a Developer ID Application certificate." >&2
+  exit 1
+fi
+
+# build.sh drops --timestamp if the timestamp server is unreachable. Notarization rejects
+# that minutes later with an opaque error, so catch it here instead.
+if (( NOTARIZE )) && ! grep -q '^Timestamp=' <<< "$SIGNATURE"; then
+  echo "error: the signature has no secure timestamp. Check your network and rebuild." >&2
   exit 1
 fi
 
 # 2. Notarize the app itself, then staple the ticket into the bundle, so the copy
 #    inside the DMG is already trusted even if the DMG is unpacked or moved.
-if [[ "${1:-}" != "--no-notarize" ]]; then
+if (( NOTARIZE )); then
   if ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
     echo "error: no notarytool profile '$NOTARY_PROFILE'. See the header of this script." >&2
     exit 1
@@ -53,16 +65,21 @@ rm -rf "$STAGE"
 IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
   | grep -m1 'Developer ID Application' | sed -E 's/.*"(.*)"/\1/')}"
 codesign --force --timestamp --sign "$IDENTITY" "$DMG"
-[[ "${1:-}" != "--no-notarize" ]] && {
+if (( NOTARIZE )); then
   xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
   xcrun stapler staple "$DMG"
-}
+fi
 
-# 4. Verify exactly what a user's Mac will check on first launch.
+# 4. Verify exactly what a user's Mac will check on first launch. Gatekeeper rejects an
+#    unnotarized build by design, so only assert on it when we actually notarized.
 echo "\n--- verification ---"
 codesign --verify --deep --strict --verbose=2 "$APP"
-spctl -a -vvv -t install "$DMG"
-spctl -a -vvv "$APP"
-xcrun stapler validate "$DMG" || true
+if (( NOTARIZE )); then
+  spctl -a -vvv -t install "$DMG"
+  spctl -a -vvv "$APP"
+  xcrun stapler validate "$DMG"
+else
+  spctl -a -vvv -t install "$DMG" || echo "warning: not notarized, as requested"
+fi
 shasum -a 256 "$DMG"
 echo "\nReady: $DMG"
