@@ -62,8 +62,11 @@ ln -s /Applications "$STAGE/Applications"
 hdiutil create -volname "Claude Usage" -srcfolder "$STAGE" -ov -format UDZO -quiet "$DMG"
 rm -rf "$STAGE"
 
-IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
-  | grep -m1 'Developer ID Application' | sed -E 's/.*"(.*)"/\1/')}"
+IDENTITY="${SIGN_IDENTITY:-}"
+if [[ -z "$IDENTITY" ]]; then
+  IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep -m1 'Developer ID Application' | sed -E 's/.*"(.*)"/\1/') || true
+fi
 codesign --force --timestamp --sign "$IDENTITY" "$DMG"
 if (( NOTARIZE )); then
   xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait

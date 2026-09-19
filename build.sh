@@ -31,8 +31,13 @@ rm -rf build/arch
 cp Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
-IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
-  | grep -m1 'Developer ID Application' | sed -E 's/.*"(.*)"/\1/')}"
+# `|| true`: with `pipefail`, a grep that matches nothing (no certificate installed) would
+# otherwise abort the script here, before the ad-hoc fallback below could run.
+IDENTITY="${SIGN_IDENTITY:-}"
+if [[ -z "$IDENTITY" ]]; then
+  IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep -m1 'Developer ID Application' | sed -E 's/.*"(.*)"/\1/') || true
+fi
 if [[ -n "$IDENTITY" ]]; then
   # --timestamp needs the network; a release must have it, a local build can live without it.
   codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP" 2>/dev/null \
