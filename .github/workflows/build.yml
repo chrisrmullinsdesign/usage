@@ -1,0 +1,45 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build universal app
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version && sw_vers
+
+      - name: Validate Info.plist
+        run: plutil -lint Info.plist
+
+      # No signing secrets in CI. build.sh falls back to an ad-hoc signature when no
+      # Developer ID certificate is present; releases are signed and notarized locally.
+      - name: Build
+        run: ./build.sh
+
+      - name: Verify bundle
+        run: |
+          codesign --verify --strict --deep --verbose=2 build/ClaudeUsage.app
+          lipo -archs build/ClaudeUsage.app/Contents/MacOS/ClaudeUsage | grep -q 'arm64' \
+            && lipo -archs build/ClaudeUsage.app/Contents/MacOS/ClaudeUsage | grep -q 'x86_64'
+          test -f build/ClaudeUsage.app/Contents/Resources/AppIcon.icns
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClaudeUsage-unsigned-app
+          path: build/ClaudeUsage.app
+          retention-days: 7

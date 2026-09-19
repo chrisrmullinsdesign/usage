@@ -1,0 +1,19 @@
+# Build products
+build/
+*.dmg
+*.zip
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.xcuserstate
+xcuserdata/
+
+# Never commit local logs or credentials
+*.log
+*.p12
+*.cer
+*.provisionprofile

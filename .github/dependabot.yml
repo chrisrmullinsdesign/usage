@@ -1,0 +1,7 @@
+# The app has no third-party dependencies; this keeps the CI actions themselves current.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
