@@ -17,3 +17,6 @@ xcuserdata/
 *.p12
 *.cer
 *.provisionprofile
+
+# Working notes, not part of the published project
+/pickup.md
