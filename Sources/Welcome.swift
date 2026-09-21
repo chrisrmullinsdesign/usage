@@ -87,7 +87,7 @@ struct WelcomeView: View {
         .padding(24)
         .frame(width: 460, height: 500)
         .background(Palette.surface)
-        .onAppear { connected = !store.limits.isEmpty && store.setupProblem == nil }
+        .onAppear { connected = !store.limits.isEmpty && store.lastReadError == nil }
     }
 
     private var heading: some View {

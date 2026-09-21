@@ -40,14 +40,11 @@ struct Credentials: Sendable {
         var errorDescription: String? {
             switch self {
             case .notFound: "No Claude Code login found in Keychain. Install Claude Code and sign in."
-            case .accessDenied: "macOS didn't allow the Keychain read. Reopen Claude Usage and choose Always Allow."
+            case .accessDenied: "macOS didn't allow the Keychain read. Click ? in the popover, then Connect, and choose Always Allow."
             case .timedOut: "Keychain didn't answer in time. It may be locked."
             case .malformed: "Couldn't read the Claude Code login from Keychain."
             }
         }
-
-        /// Only the user can clear these, and the welcome window explains how.
-        var needsUserAction: Bool { self == .notFound || self == .accessDenied }
     }
 
     /// `security`'s exit code for "no such Keychain item" (errSecItemNotFound), as opposed
@@ -208,9 +205,11 @@ final class UsageStore {
     private(set) var status: FetchStatus = .loading
     private(set) var isRefreshing = false
     private(set) var local = LocalUsage()
-    /// Set when the only way forward is something the person at the keyboard must do:
-    /// sign in to Claude Code, or allow the Keychain read. Drives the welcome window.
-    private(set) var setupProblem: Credentials.ReadError?
+    /// The most recent Keychain failure, of any kind, or nil once a read succeeds.
+    /// This has to cover *every* failure: the welcome window treats nil as "connected",
+    /// so narrowing it to the failures a user can act on would report success after a
+    /// timed-out or malformed read.
+    private(set) var lastReadError: Credentials.ReadError?
 
     @ObservationIgnored private let scanner = TranscriptScanner()
     @ObservationIgnored private var timer: Timer?
@@ -273,7 +272,7 @@ final class UsageStore {
     /// fixing, or nil if the app is now connected.
     func connect() async -> Credentials.ReadError? {
         await refresh(manual: true, allowPrompt: true)
-        return setupProblem
+        return lastReadError
     }
 
     /// - Parameters:
@@ -302,13 +301,12 @@ final class UsageStore {
                 try Credentials.read(allowPrompt: allowPrompt)
             }.value
         } catch {
-            let readError = error as? Credentials.ReadError
-            setupProblem = (readError?.needsUserAction ?? false) ? readError : nil
+            lastReadError = error as? Credentials.ReadError ?? .malformed
             status = .failed(error.localizedDescription)
             Log.write("keychain: \(error.localizedDescription)")
             return
         }
-        setupProblem = nil
+        lastReadError = nil
         plan = credentials.planLabel
 
         if let expiry = credentials.expiresAt, expiry < Date() {
