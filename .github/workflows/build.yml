@@ -18,7 +18,7 @@ jobs:
     name: Build universal app
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Show toolchain
         run: swift --version && sw_vers
@@ -38,7 +38,7 @@ jobs:
             && lipo -archs build/ClaudeUsage.app/Contents/MacOS/ClaudeUsage | grep -q 'x86_64'
           test -f build/ClaudeUsage.app/Contents/Resources/AppIcon.icns
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ClaudeUsage-adhoc-app
           path: build/ClaudeUsage.app
