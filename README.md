@@ -86,7 +86,9 @@ so the bearer token can't be forwarded somewhere else by a 302. Transcript data 
 **Permission is asked for, not sprung.** Nothing reads the Keychain until you click Connect in
 the first-run window. Each way that read can fail — no Claude Code login, a denied dialog, a
 locked Keychain, a malformed item — gets its own message and its own next step, rather than one
-generic error.
+generic error. If the Keychain route doesn't work at all, you can paste a token instead; it goes
+into the app's own Keychain item and never touches Claude Code's. See
+[SECURITY.md](SECURITY.md#pasted-tokens).
 
 **It stays out of the way.** Transcripts are read incrementally: the first scan covers seven days
 in about three seconds, and later scans only parse the bytes appended since the last one,

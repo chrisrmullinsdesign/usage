@@ -33,8 +33,11 @@ struct ClaudeUsageApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// On first run the menu bar item alone doesn't explain what the app is about to ask for,
     /// so open the welcome window before any Keychain read can surprise anyone.
+    /// `--show-welcome` opens it regardless, for anyone who dismissed it and wants it back
+    /// without hunting for the ? button.
     func applicationDidFinishLaunching(_ notification: Notification) {
-        guard !UserDefaults.standard.bool(forKey: WelcomeWindowController.seenKey) else { return }
+        let forced = CommandLine.arguments.contains("--show-welcome")
+        guard forced || !UserDefaults.standard.bool(forKey: WelcomeWindowController.seenKey) else { return }
         WelcomeWindowController.shared.show(store: UsageStore.shared)
     }
 }

@@ -8,8 +8,8 @@ about 1,300 lines of Swift in `Sources/`.
 
 | | |
 |---|---|
-| **Reads** | The Keychain item `Claude Code-credentials`; `~/.claude/projects/**/*.jsonl` |
-| **Writes** | `~/Library/Logs/ClaudeUsage.log`; its own `UserDefaults` |
+| **Reads** | The Keychain item `Claude Code-credentials`; its own Keychain item `ClaudeUsage manual token`; `~/.claude/projects/**/*.jsonl` |
+| **Writes** | `~/Library/Logs/ClaudeUsage.log`; its own `UserDefaults`; its own Keychain item, and only when you paste a token in |
 | **Network** | `GET https://api.anthropic.com/api/oauth/usage`, once per refresh |
 | **Never** | Refreshes, rotates or writes the token. Uploads transcripts. Opens a port. |
 
@@ -19,12 +19,34 @@ about 1,300 lines of Swift in `Sources/`.
   The Keychain item also holds Claude Code's MCP OAuth secrets; `security` can't return a
   single field, so the app parses the whole item and keeps only `claudeAiOauth.accessToken`.
 - Never logged. `Sources/Usage.swift` logs percentages and HTTP status codes, nothing else.
+  A pasted token is logged only by *length*, to tell a truncated paste from a rejected one.
   Read `~/Library/Logs/ClaudeUsage.log` yourself to confirm.
 - The app never *refreshes* the token. Rotating it would sign Claude Code out, so an expired
   token is reported to you rather than renewed.
 - **Redirects are refused** (`RefuseRedirects` in `Sources/Usage.swift`). Without this, a
   redirect would carry the `Authorization` header to whatever host it named.
 - The URL session is ephemeral: no disk cache, no cookies, TLS 1.2 minimum.
+
+## Pasted tokens
+
+If the Keychain route doesn't work on your Mac, the welcome window lets you paste an OAuth
+access token instead. That token:
+
+- Goes into **this app's own** Keychain item (`ClaudeUsage manual token`), created and owned
+  by this app. Claude Code's item is never written to, by this or any other code path.
+- Is stored through the Security framework, not the `security` CLI. Shelling out would mean
+  `security add-generic-password -w <token>`, putting the token in the process arguments
+  where any other process could read it out of `ps`.
+- Is marked `kSecAttrAccessibleWhenUnlocked` and non-synchronizable, so it stays on this Mac
+  and is unreadable while the Mac is locked.
+- Is discarded if Claude rejects it (401/403). It is *kept* if the check fails for an
+  unrelated reason — no network, or a rate limit — because throwing away a token over a
+  transient error loses something that was probably fine. The window says which happened.
+- Can be removed at any time with **Forget token** in the welcome window, which deletes the
+  item and falls back to the Claude Code login.
+
+These tokens are short-lived (roughly an hour), so this is an escape hatch, not a way to run
+the app without Claude Code.
 
 ## Hardening
 

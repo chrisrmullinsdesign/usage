@@ -31,7 +31,7 @@ final class WelcomeWindowController: NSObject, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.contentView = NSHostingView(rootView: WelcomeView(store: store) { [weak self] in
+        window.contentViewController = NSHostingController(rootView: WelcomeView(store: store) { [weak self] in
             self?.window?.close()
         })
         window.center()
@@ -53,6 +53,12 @@ struct WelcomeView: View {
     @State private var isConnecting = false
     @State private var problem: Credentials.ReadError?
     @State private var connected = false
+    @State private var showingTokenField = false
+    @State private var pastedToken = ""
+    @State private var tokenMessage: String?
+    /// A saved-but-unverified token isn't an error, so it shouldn't be coloured like one.
+    @State private var tokenMessageIsError = true
+    @State private var isSavingToken = false
     @State private var opensAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginMessage: String?
 
@@ -85,7 +91,7 @@ struct WelcomeView: View {
             statusArea
         }
         .padding(24)
-        .frame(width: 460, height: 500)
+        .frame(width: 460)
         .background(Palette.surface)
         .onAppear { connected = !store.limits.isEmpty && store.lastReadError == nil }
     }
@@ -132,7 +138,7 @@ struct WelcomeView: View {
                 }
             } else if let problem {
                 advice(for: problem)
-            } else {
+            } else if !showingTokenField {
                 // Built from Text values rather than one interpolated string: concatenating
                 // Swift strings first would lose the markdown styling on "Always Allow".
                 (Text("macOS may ask for permission to read the Claude Code login. Choosing ")
@@ -143,11 +149,13 @@ struct WelcomeView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            if showingTokenField { tokenEntry }
+
             HStack(spacing: 10) {
                 if connected {
                     Button("Done") { finish() }
                         .keyboardShortcut(.defaultAction)
-                } else {
+                } else if !showingTokenField {
                     Button(isConnecting ? "Waiting for permission…" : "Connect to Claude Code") {
                         Task { await connect() }
                     }
@@ -159,9 +167,104 @@ struct WelcomeView: View {
                     Button("Not now") { finish() }
                 }
                 Spacer()
+                if !connected {
+                    Button(showingTokenField ? "Use Claude Code instead" : "Paste a token instead") {
+                        showingTokenField.toggle()
+                        tokenMessage = nil
+                    }
+                    .buttonStyle(.link)
+                    .font(.system(size: 11))
+                } else if store.usesPastedToken {
+                    Button("Forget token") {
+                        Task {
+                            await store.forgetPastedToken()
+                            connected = store.lastReadError == nil && !store.limits.isEmpty
+                        }
+                    }
+                    .buttonStyle(.link)
+                    .font(.system(size: 11))
+                }
                 Link("How it works", destination: URL(string: "https://github.com/chrisrmullinsdesign/usage")!)
                     .font(.system(size: 11))
             }
+        }
+    }
+
+    /// For anyone the Keychain route doesn't work for: a denied prompt, a Mac without
+    /// Claude Code, or an access list that blocks the read. The token goes into this app's
+    /// own Keychain item, never into Claude Code's.
+    private var tokenEntry: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Paste an OAuth access token")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Palette.ink)
+            Text("Run this in Terminal, then copy the accessToken value out of the JSON:")
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: "security find-generic-password -s 'Claude Code-credentials' -w")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(Palette.ink)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 4).fill(Palette.surface))
+
+            SecureField("sk-ant-oat…", text: $pastedToken)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11, design: .monospaced))
+                .onSubmit { Task { await savePastedToken() } }
+
+            HStack(spacing: 8) {
+                Button(isSavingToken ? "Checking…" : "Save and connect") {
+                    Task { await savePastedToken() }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(isSavingToken || pastedToken.isEmpty)
+                if isSavingToken { ProgressView().controlSize(.small) }
+            }
+
+            if let tokenMessage {
+                Text(tokenMessage)
+                    .font(.system(size: 11))
+                    .foregroundStyle(tokenMessageIsError ? Palette.critical : Palette.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text("These tokens are short-lived — roughly an hour — so this is a stopgap, "
+                 + "not a replacement for the Claude Code login. The token is stored in this "
+                 + "app's own Keychain item and is never written back to Claude Code's.")
+                .font(.system(size: 10))
+                .foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Palette.banner))
+    }
+
+    private func savePastedToken() async {
+        isSavingToken = true
+        let outcome = await store.savePastedToken(pastedToken)
+        isSavingToken = false
+        switch outcome {
+        case .connected:
+            tokenMessage = nil
+            pastedToken = ""
+            showingTokenField = false
+            connected = true
+            hasSeenWelcome = true
+        case .rejected(let message):
+            tokenMessage = message
+            tokenMessageIsError = true
+        case .savedUnverified(let message):
+            // Kept, so clear the field and let them close the window; the menu bar will
+            // show whether it worked at the next refresh.
+            tokenMessage = message
+            tokenMessageIsError = false
+            pastedToken = ""
+            hasSeenWelcome = true
         }
     }
 

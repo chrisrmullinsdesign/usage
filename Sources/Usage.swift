@@ -28,11 +28,16 @@ enum Log {
 
 // MARK: - Credentials
 
-/// Claude Code's OAuth login, read from the macOS Keychain.
+/// An OAuth token to ask Claude for plan usage with, and where it came from.
 struct Credentials: Sendable {
+    /// Which Keychain item the token came from. Worth tracking because the two age very
+    /// differently: Claude Code renews its own token, while a pasted one just expires.
+    enum Source: Sendable { case claudeCode, pasted }
+
     let accessToken: String
     let expiresAt: Date?
     let planLabel: String?
+    var source: Source = .claudeCode
 
     enum ReadError: LocalizedError {
         case notFound, accessDenied, malformed, timedOut
@@ -45,6 +50,16 @@ struct Credentials: Sendable {
             case .malformed: "Couldn't read the Claude Code login from Keychain."
             }
         }
+    }
+
+    /// Prefers a token the person pasted in, and falls back to Claude Code's login.
+    /// The pasted token wins because storing one is an explicit choice, usually made
+    /// precisely because the Claude Code path didn't work on this Mac.
+    static func resolve(allowPrompt: Bool = false) throws -> Credentials {
+        if let pasted = TokenStore.read() {
+            return Credentials(accessToken: pasted, expiresAt: nil, planLabel: nil, source: .pasted)
+        }
+        return try read(allowPrompt: allowPrompt)
     }
 
     /// `security`'s exit code for "no such Keychain item" (errSecItemNotFound), as opposed
@@ -205,6 +220,10 @@ final class UsageStore {
     private(set) var status: FetchStatus = .loading
     private(set) var isRefreshing = false
     private(set) var local = LocalUsage()
+    /// Whether Claude specifically rejected the token (401/403), as opposed to the request
+    /// failing for some unrelated reason. Only an auth rejection says anything about the token.
+    private(set) var lastAuthRejected = false
+
     /// The most recent Keychain failure, of any kind, or nil once a read succeeds.
     /// This has to cover *every* failure: the welcome window treats nil as "connected",
     /// so narrowing it to the failures a user can act on would report success after a
@@ -275,6 +294,64 @@ final class UsageStore {
         return lastReadError
     }
 
+    /// What happened to a token the person pasted in.
+    enum SaveOutcome {
+        /// Stored and confirmed working.
+        case connected
+        /// Claude refused it. Not kept.
+        case rejected(String)
+        /// Stored, but something unrelated stopped us confirming it — no network, or a
+        /// rate limit. Kept, because discarding a token over a transient failure would
+        /// lose something that is probably fine.
+        case savedUnverified(String)
+    }
+
+    /// True when the token in use was pasted in rather than read from Claude Code.
+    var usesPastedToken: Bool { TokenStore.read() != nil }
+
+    /// Stores a pasted token, then immediately tries to use it. A token that doesn't work
+    /// isn't kept: leaving a bad one behind would silently shadow the Claude Code login.
+    /// Returns nil on success, or a message explaining what went wrong.
+    func savePastedToken(_ token: String) async -> SaveOutcome {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .rejected("Paste a token first.") }
+
+        let previous = TokenStore.read()
+        do {
+            try TokenStore.save(trimmed)
+        } catch {
+            return .rejected(error.localizedDescription)
+        }
+
+        await refresh(manual: true)
+        if status == .ok, lastReadError == nil {
+            Log.write("pasted token accepted (\(trimmed.count) chars)")
+            return .connected
+        }
+
+        guard lastAuthRejected else {
+            // Length only — never the token itself. Enough to tell a truncated paste from
+            // a rejected one without putting a credential in a log file.
+            Log.write("pasted token saved but unverified (\(trimmed.count) chars): "
+                      + (status.message ?? "no status message"))
+            return .savedUnverified((status.message ?? "Couldn't reach Claude just now.")
+                + " The token was saved and will be used at the next refresh.")
+        }
+
+        // Claude actually refused it, so put back whatever was there before.
+        if let previous { try? TokenStore.save(previous) } else { try? TokenStore.clear() }
+        Log.write("pasted token rejected (\(trimmed.count) chars), reverted")
+        return .rejected("Claude rejected that token. Check you copied the whole "
+                         + "accessToken value, and that it hasn't expired.")
+    }
+
+    /// Forgets the pasted token and goes back to Claude Code's login.
+    func forgetPastedToken() async {
+        try? TokenStore.clear()
+        Log.write("pasted token cleared")
+        await refresh(manual: true)
+    }
+
     /// - Parameters:
     ///   - minInterval: skip if the last attempt was more recent (debounces popover opens and clicks).
     ///   - manual: a user click ignores the rate-limit backoff.
@@ -298,7 +375,7 @@ final class UsageStore {
         let credentials: Credentials
         do {
             credentials = try await Task.detached(priority: allowPrompt ? .userInitiated : .utility) {
-                try Credentials.read(allowPrompt: allowPrompt)
+                try Credentials.resolve(allowPrompt: allowPrompt)
             }.value
         } catch {
             lastReadError = error as? Credentials.ReadError ?? .malformed
@@ -336,6 +413,7 @@ final class UsageStore {
         case 200:
             do {
                 let decoded = try UsageResponse.decoder.decode(UsageResponse.self, from: data)
+                lastAuthRejected = false
                 limits = decoded.resolvedLimits
                 breakdown = decoded.sevenDayBreakdown?.rows.filter { $0.percent > 0 } ?? []
                 updatedAt = Date()
@@ -347,8 +425,11 @@ final class UsageStore {
                 Log.write("usage decode failed: \(error)")
             }
         case 401, 403:
-            status = .stale("Claude rejected the login token. Open Claude Code to renew it.")
-            Log.write("usage HTTP \(code)")
+            lastAuthRejected = true
+            status = .stale(credentials.source == .pasted
+                ? "The token you pasted has expired or been revoked. Paste a fresh one."
+                : "Claude rejected the login token. Open Claude Code to renew it.")
+            Log.write("usage HTTP \(code) (\(credentials.source == .pasted ? "pasted" : "claude code") token)")
         case 429:
             backoffUntil = Date().addingTimeInterval(30 * 60)
             status = .stale("Rate limited by Claude. Trying again in 30 minutes.")
