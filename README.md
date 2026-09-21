@@ -21,19 +21,25 @@ The same numbers as Claude Code's `/usage`, plus the tokens Claude Code has reco
 
 ## Install
 
-1. Download **ClaudeUsage-1.0.0.dmg** from the [latest release](https://github.com/chrisrmullinsdesign/usage/releases/latest).
-2. Drag **Claude Usage** to Applications.
-3. Open it. A window explains what it reads before it reads anything — click **Connect to Claude Code**.
-
-The app is signed with a Developer ID and notarized by Apple, so it opens on a double-click:
-no right-click-Open, no trip to System Settings. Verify that yourself if you like:
+Build it — a few seconds, and no Xcode project needed:
 
 ```sh
-spctl -a -vvv -t install ~/Downloads/ClaudeUsage-1.0.0.dmg   # accepted · Notarized Developer ID
+git clone https://github.com/chrisrmullinsdesign/usage.git
+cd usage
+./build.sh --install
 ```
 
-You need [Claude Code](https://claude.com/claude-code) installed and signed in — that's where the
-usage data comes from.
+That produces a universal binary, signs it, and copies it to `~/Applications`. Open it and a
+window explains what the app reads before it reads anything — click **Connect to Claude Code**.
+
+You need the Xcode command line tools (`xcode-select --install`), macOS 14+, and
+[Claude Code](https://claude.com/claude-code) installed and signed in — that's where the usage
+data comes from.
+
+> **No download yet.** A notarized DMG isn't published, so there's nothing to drag from a
+> release page. Building from source sidesteps Gatekeeper entirely: a binary you compiled runs
+> without any "unidentified developer" prompt. `Scripts/release.sh` is ready to produce a
+> signed, notarized, stapled DMG whenever that changes.
 
 <div align="center"><img src="docs/welcome.png" width="420" alt="First-run window listing what the app reads and why"></div>
 
@@ -92,18 +98,17 @@ and HTTP 429 backs off for 30 minutes. Idle cost is about 60 MB of memory and no
 It isn't sandboxed — the App Sandbox would block reading `~/.claude` — which is exactly why the
 source is kept short enough to read in a sitting. See [SECURITY.md](SECURITY.md).
 
-## Build from source
-
-Needs the Xcode command line tools (`xcode-select --install`) and macOS 14+.
+## Build options
 
 ```sh
-./build.sh            # build/ClaudeUsage.app, universal, ad-hoc signed
+./build.sh            # build/ClaudeUsage.app, universal
 ./build.sh --install  # also copy to ~/Applications and launch
 ```
 
 There's no Xcode project and no package manager: `build.sh` runs `swiftc` once per architecture
-and `lipo`s the result. With a Developer ID certificate installed it signs with that instead;
-`Scripts/release.sh` takes it the rest of the way to a notarized, stapled DMG.
+and `lipo`s the result. Without a signing certificate it signs ad-hoc, which is all a local
+build needs; with a Developer ID certificate it uses that instead. `Scripts/release.sh` takes a
+Developer ID build the rest of the way to a notarized, stapled DMG.
 
 `Scripts/make-icon.sh` re-renders the app icon from `Scripts/make-icon.swift` — the icon is
 drawn in CoreGraphics, not pasted in from a design tool.

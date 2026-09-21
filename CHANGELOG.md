@@ -13,8 +13,10 @@ First public release.
   column chart, and a per-model split.
 - Welcome window on first run that explains every permission before requesting it,
   with specific recovery steps for each way the Keychain read can fail.
-- Universal binary (Apple silicon and Intel), Developer ID signed and notarized.
+- Universal binary (Apple silicon and Intel), hardened runtime, Developer ID signed
+  when a certificate is available and ad-hoc signed otherwise.
 - `Scripts/make-icon.swift`: the app icon, rendered from source.
 - `Scripts/release.sh`: build, sign, notarize, staple and verify a distributable DMG.
+  No notarized release is published yet; install by building from source.
 
-[1.0.0]: https://github.com/chrisrmullinsdesign/usage/releases/tag/v1.0.0
+[1.0.0]: https://github.com/chrisrmullinsdesign/usage

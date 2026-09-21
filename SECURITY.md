@@ -28,21 +28,30 @@ about 1,300 lines of Swift in `Sources/`.
 
 ## Hardening
 
-- **Hardened runtime**, no entitlements, Developer ID signed and notarized.
+- **Hardened runtime**, no entitlements. Release builds are Developer ID signed; a
+  notarized DMG is not published yet, so today the app is built from source.
 - Not sandboxed: the App Sandbox would block reading `~/.claude` and running the Keychain
   tool. This is a deliberate trade-off, and the reason the source is short and readable.
 - Transcript lines over 32 MB (pasted images, file dumps) are skipped rather than buffered.
 - The Keychain read is given 15 seconds during background polls, so a locked Keychain can't
   stall the app. Only the welcome window's explicit **Connect** waits on a permission dialog.
 
-## Verifying a download
+## Verifying what you built
 
 ```sh
-spctl -a -vvv -t install ~/Downloads/ClaudeUsage-1.0.0.dmg   # should say: accepted, Notarized Developer ID
-codesign -dv --verbose=2 /Applications/ClaudeUsage.app 2>&1 | grep TeamIdentifier
+codesign --verify --deep --strict --verbose=2 build/ClaudeUsage.app
+codesign -dvv build/ClaudeUsage.app 2>&1 | grep -E 'TeamIdentifier|flags'
 ```
 
-The Team Identifier should be `S52LNBX9HH`. If it isn't, the build didn't come from this project.
+Expect `flags=0x10000(runtime)`. A build made on a machine with the project's Developer ID
+certificate reports `TeamIdentifier=S52LNBX9HH`; your own build will be ad-hoc signed, with no
+team identifier, which is expected and fine.
+
+If a signed DMG is published later, verify it before opening:
+
+```sh
+spctl -a -vvv -t install ~/Downloads/ClaudeUsage-<version>.dmg   # accepted, Notarized Developer ID
+```
 
 ## Reporting a vulnerability
 
