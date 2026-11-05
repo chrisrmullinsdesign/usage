@@ -128,11 +128,21 @@ struct PlanLimit: Decodable, Identifiable {
 
     var id: String { kind + (scope?.model?.displayName ?? "") }
 
+    static let weekLength: TimeInterval = 7 * 24 * 3600
+
+    /// How far through the 7-day window we are (0...1), derived from the reset time.
+    func elapsedFraction(now: Date) -> Double? {
+        guard kind.hasPrefix("weekly"), let resetsAt else { return nil }
+        let remaining = resetsAt.timeIntervalSince(now)
+        guard remaining > 0, remaining <= Self.weekLength else { return nil }
+        return 1 - remaining / Self.weekLength
+    }
+
     var title: String {
         switch kind {
         case "session": "Current session"
-        case "weekly_all": "Weekly · all models"
-        case "weekly_scoped": "Weekly · \(scope?.model?.displayName ?? "scoped")"
+        case "weekly_all": "All models"
+        case "weekly_scoped": scope?.model?.displayName ?? "Scoped"
         default: kind.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
@@ -236,7 +246,7 @@ final class UsageStore {
     @ObservationIgnored private var backoffUntil: Date?
 
     private static let endpoint = URL(string: "https://api.anthropic.com/api/oauth/usage")!
-    /// Plan limits move slowly (5-hour and weekly windows), so poll gently.
+    /// Plan limits move slowly (weekly window), so poll gently.
     static let pollInterval: TimeInterval = 15 * 60
     /// Opening the popover only refreshes figures older than this.
     static let staleOnOpen: TimeInterval = 5 * 60
@@ -270,14 +280,17 @@ final class UsageStore {
         !UserDefaults.standard.bool(forKey: WelcomeWindowController.seenKey)
     }
 
-    var session: PlanLimit? { limits.first { $0.kind == "session" } }
     var weekly: PlanLimit? { limits.first { $0.kind == "weekly_all" } }
+    /// Per-model weekly limits (e.g. Fable), highest usage first.
+    var scopedWeekly: [PlanLimit] { limits.filter { $0.kind == "weekly_scoped" }.sorted { $0.percent > $1.percent } }
+    /// Anything else the API returns (e.g. a session window, if it ever comes back).
+    var otherLimits: [PlanLimit] { limits.filter { $0.kind != "weekly_all" && $0.kind != "weekly_scoped" } }
 
     var menuBarSymbol: String {
         // Any fetch problem (expired token, offline, rate limited) flags the menu bar, so frozen figures don't pass as live.
         if status.message != nil { return "exclamationmark.triangle" }
-        guard let session else { return "gauge.with.dots.needle.0percent" }
-        switch session.percent {
+        guard let weekly else { return "gauge.with.dots.needle.0percent" }
+        switch weekly.percent {
         case ..<20: return "gauge.with.dots.needle.0percent"
         case ..<45: return "gauge.with.dots.needle.33percent"
         case ..<60: return "gauge.with.dots.needle.50percent"
