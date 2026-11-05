@@ -13,9 +13,22 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   countdown and a projection of where usage lands at reset. Per-model weekly limits sit below.
 
 ### Added
+- Refreshed `docs/popover.png` and `docs/menubar.png` for the weekly layout.
 - Menu bar option showing weekly percentage with days until reset.
+- Unit tests (`Scripts/test.sh`) for the usage maths, formatting, API decoding and token validation, run in CI.
+- CI verifies the hardened runtime and the absence of entitlements, builds with warnings as errors,
+  pins its actions to commit SHAs and no longer persists the checkout credential.
+
+### Security
+- A token is validated (printable ASCII, no whitespace, at most 4 KB) before it reaches a request
+  header, whether pasted or read from the Keychain.
+- The log file is created owner-only (`0600`); a log left world-readable by an earlier version is tightened at launch.
+- Log writes are serialized so concurrent writers can't interleave.
 
 ### Fixed
+- The pace projection no longer warns "on track to hit the limit" in the first quarter of the week,
+  where a one-day burst extrapolates to an alarming but meaningless figure. The even-pace tick still shows.
+- Deprecated `Text + Text` concatenation on macOS 26 replaced with a markdown literal.
 - Menu bar showed `– · N%` and the gauge icon stayed at zero when no session limit was returned.
 
 ## [1.0.0] — 2026-09-19

@@ -7,6 +7,7 @@
 # Signing: uses your "Developer ID Application" certificate when one is installed,
 # otherwise falls back to an ad-hoc signature so anyone can build from source.
 # Either way the hardened runtime is on and no entitlements are requested.
+# CI sets SWIFTC_EXTRA_FLAGS="-warnings-as-errors" so a warning fails the build; local builds stay lenient.
 # For a release users can install without Gatekeeper warnings, see Scripts/release.sh.
 set -euo pipefail
 cd "${0:A:h}"
@@ -19,7 +20,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" build/arch
 
 # One slice per architecture, then lipo them together: Rosetta-free on Intel Macs.
 for arch in arm64 x86_64; do
-  swiftc -O -parse-as-library -swift-version 5 \
+  swiftc -O -parse-as-library -swift-version 5 ${=SWIFTC_EXTRA_FLAGS:-} \
     -target "${arch}-apple-macos${DEPLOYMENT_TARGET}" \
     Sources/*.swift -o "build/arch/ClaudeUsage-${arch}" &
 done

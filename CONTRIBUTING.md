@@ -26,12 +26,16 @@ Without a Developer ID certificate the build signs ad-hoc, which is fine for loc
 ## Before opening a PR
 
 ```sh
+./Scripts/test.sh   # unit tests for the pure logic; add a case when you change it
 ./build.sh          # must build clean for both architectures
 codesign --verify --strict --deep build/ClaudeUsage.app
 ```
 
 Then run it and open the popover — there are no automated UI tests, so say in the PR what
 you exercised by hand.
+
+CI also builds with `-warnings-as-errors`, so a warning fails the PR. Run
+`SWIFTC_EXTRA_FLAGS=-warnings-as-errors ./build.sh` to see what CI will see.
 
 ## Changing the icon
 

@@ -124,24 +124,28 @@ func shortRemaining(_ date: Date?, now: Date) -> String? {
 
 /// Compares usage so far with an even burn across the 7-day window.
 struct Pace {
-    let expected: Double   // % that would be used by now at an even pace
-    let projected: Double  // % at reset if the current rate continues
+    /// Below this much of the window, a rate extrapolated to the full week is mostly noise:
+    /// a burst on day one would read as "on track to hit the limit".
+    static let minElapsedForProjection = 0.25
+
+    let expected: Double    // % that would be used by now at an even pace
+    let projected: Double?  // % at reset if the current rate continues; nil too early to say
 
     init?(limit: PlanLimit, now: Date) {
-        // Too early in the window the rate is noise.
-        guard let elapsed = limit.elapsedFraction(now: now), elapsed >= 0.03 else { return nil }
+        guard let elapsed = limit.elapsedFraction(now: now) else { return nil }
         expected = elapsed * 100
-        projected = limit.percent / elapsed
+        projected = elapsed >= Self.minElapsedForProjection ? limit.percent / elapsed : nil
     }
 
-    var summary: String {
+    var summary: String? {
+        guard let projected else { return nil }
         if projected >= 100 { return "On track to hit the limit before reset" }
         if projected >= 85 { return "Heading for ~\(percentText(projected)) by reset" }
         return projected < 50 ? "Well under pace · ~\(percentText(projected)) by reset"
                               : "On pace · ~\(percentText(projected)) by reset"
     }
 
-    var isOver: Bool { projected >= 100 }
+    var isOver: Bool { (projected ?? 0) >= 100 }
 }
 
 // MARK: - Menu bar label
@@ -496,15 +500,17 @@ struct WeeklyHero: View {
                 Text(resetDescription(limit.resetsAt, now: now))
                     .foregroundStyle(Palette.ink2)
                 if let pace {
-                    HStack(spacing: 4) {
-                        if pace.isOver {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 10))
-                                .foregroundStyle(Palette.serious)
+                    if let summary = pace.summary {
+                        HStack(spacing: 4) {
+                            if pace.isOver {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Palette.serious)
+                            }
+                            Text(summary)
                         }
-                        Text(pace.summary)
+                        .foregroundStyle(pace.isOver ? Palette.ink : Palette.muted)
                     }
-                    .foregroundStyle(pace.isOver ? Palette.ink : Palette.muted)
                     Text("Tick marks an even pace: \(percentText(pace.expected)) used by now.")
                         .font(.system(size: 10))
                         .foregroundStyle(Palette.muted)

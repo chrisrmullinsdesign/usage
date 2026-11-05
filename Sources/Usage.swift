@@ -7,22 +7,31 @@ import Observation
 enum Log {
     private static let url = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Logs/ClaudeUsage.log")
+    /// Writes arrive from the main actor and the transcript scanner at once; one queue keeps
+    /// their seek-then-write sequences from interleaving.
+    private static let queue = DispatchQueue(label: "ClaudeUsage.log")
 
     static func write(_ message: String) {
         guard let data = "\(Date().formatted(.iso8601)) \(message)\n".data(using: .utf8) else { return }
         FileHandle.standardError.write(data)
-        if let handle = try? FileHandle(forWritingTo: url) {
-            handle.seekToEndOfFile()
-            handle.write(data)
-            try? handle.close()
-        } else {
-            try? data.write(to: url)
+        queue.sync {
+            if let handle = try? FileHandle(forWritingTo: url) {
+                handle.seekToEndOfFile()
+                handle.write(data)
+                try? handle.close()
+            } else {
+                // Owner-only from the first byte: the log describes your usage, and other
+                // local accounts have no business reading it.
+                FileManager.default.createFile(atPath: url.path, contents: data, attributes: [.posixPermissions: 0o600])
+            }
         }
     }
 
+    /// Run at launch: drops an oversized log and tightens a log an earlier version left world-readable.
     static func trimIfLarge() {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
         if size > 1_000_000 { try? FileManager.default.removeItem(at: url) }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 }
 
@@ -33,6 +42,14 @@ struct Credentials: Sendable {
     /// Which Keychain item the token came from. Worth tracking because the two age very
     /// differently: Claude Code renews its own token, while a pasted one just expires.
     enum Source: Sendable { case claudeCode, pasted }
+
+    /// A bearer token is printable ASCII with no whitespace. Anything else — a stray newline
+    /// from a bad paste, or a value from a tampered Keychain item — is refused before it can
+    /// reach a header, rather than relying on URLSession to sanitise it.
+    static func isWellFormed(token: String) -> Bool {
+        let bytes = token.utf8
+        return !bytes.isEmpty && bytes.count <= 4096 && bytes.allSatisfy { (0x21...0x7E).contains($0) }
+    }
 
     let accessToken: String
     let expiresAt: Date?
@@ -328,6 +345,10 @@ final class UsageStore {
     func savePastedToken(_ token: String) async -> SaveOutcome {
         let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .rejected("Paste a token first.") }
+        guard Credentials.isWellFormed(token: trimmed) else {
+            return .rejected("That doesn't look like a token: it has spaces, line breaks or unusual characters. "
+                             + "Copy just the accessToken value.")
+        }
 
         let previous = TokenStore.read()
         do {
@@ -402,6 +423,13 @@ final class UsageStore {
         if let expiry = credentials.expiresAt, expiry < Date() {
             status = .stale("Claude Code's login token has expired. Open Claude Code and it will renew it.")
             Log.write("token expired at \(expiry.formatted(.iso8601))")
+            return
+        }
+
+        guard Credentials.isWellFormed(token: credentials.accessToken) else {
+            lastReadError = .malformed
+            status = .failed(Credentials.ReadError.malformed.errorDescription ?? "Couldn't read the login.")
+            Log.write("token failed validation (\(credentials.source == .pasted ? "pasted" : "claude code"))")
             return
         }
 
