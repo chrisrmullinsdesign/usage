@@ -49,7 +49,8 @@ data comes from.
 
 **Plan limits** — from `GET https://api.anthropic.com/api/oauth/usage`
 
-- Current session (5-hour window), weekly all-models, and weekly per-model
+- Weekly all-models usage as the headline figure, with an even-pace tick and a projection of where you'll land at reset
+- Weekly per-model limits (a session window is still shown if the API ever returns one)
 - Reset countdowns, and this week's usage split by surface
 - Meters turn amber and red, with an icon and a label, as the API reports higher severity —
   status never rides on colour alone
@@ -60,8 +61,8 @@ data comes from.
 - Output tokens per day for the last seven days; hover a column for that day's detail
 - Today's usage by model
 
-The menu bar shows `session % · weekly %` by default; the button in the popover footer switches
-it to session-only or icon-only.
+The menu bar shows the weekly % by default; the button in the popover footer switches it to
+weekly % plus days until reset, or icon-only.
 
 It refreshes every 15 minutes, when you open the popover and the figures are over five minutes
 old, or when you click ↻.

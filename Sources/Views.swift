@@ -113,17 +113,48 @@ func resetDescription(_ date: Date?, now: Date) -> String {
     return "Resets in \(span) · \(when)"
 }
 
+/// "4d", "9h", "30m" until the date, or nil if unknown/past.
+func shortRemaining(_ date: Date?, now: Date) -> String? {
+    guard let date, date > now else { return nil }
+    let minutes = Int(date.timeIntervalSince(now) / 60)
+    if minutes >= 1440 { return "\(minutes / 1440)d" }
+    if minutes >= 60 { return "\(minutes / 60)h" }
+    return "\(max(minutes, 1))m"
+}
+
+/// Compares usage so far with an even burn across the 7-day window.
+struct Pace {
+    let expected: Double   // % that would be used by now at an even pace
+    let projected: Double  // % at reset if the current rate continues
+
+    init?(limit: PlanLimit, now: Date) {
+        // Too early in the window the rate is noise.
+        guard let elapsed = limit.elapsedFraction(now: now), elapsed >= 0.03 else { return nil }
+        expected = elapsed * 100
+        projected = limit.percent / elapsed
+    }
+
+    var summary: String {
+        if projected >= 100 { return "On track to hit the limit before reset" }
+        if projected >= 85 { return "Heading for ~\(percentText(projected)) by reset" }
+        return projected < 50 ? "Well under pace · ~\(percentText(projected)) by reset"
+                              : "On pace · ~\(percentText(projected)) by reset"
+    }
+
+    var isOver: Bool { projected >= 100 }
+}
+
 // MARK: - Menu bar label
 
 enum MenuBarMode: String, CaseIterable, Identifiable {
-    case both, session, icon
+    case weekly, weeklyReset, icon
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .both: "Session and weekly %"
-        case .session: "Session % only"
+        case .weekly: "Weekly %"
+        case .weeklyReset: "Weekly % · days left"
         case .icon: "Icon only"
         }
     }
@@ -131,16 +162,21 @@ enum MenuBarMode: String, CaseIterable, Identifiable {
 
 struct MenuBarLabel: View {
     let store: UsageStore
-    @AppStorage("menuBarMode") private var mode: MenuBarMode = .both
+    @AppStorage("menuBarMode") private var mode: MenuBarMode = .weekly
 
     var body: some View {
         let icon = Image(systemName: store.menuBarSymbol)
-        let session = store.session.map { percentText($0.percent) } ?? "–"
         let weekly = store.weekly.map { percentText($0.percent) } ?? "–"
         switch mode {
         case .icon: icon
-        case .session: HStack(spacing: 4) { icon; Text(session) }
-        case .both: HStack(spacing: 4) { icon; Text("\(session) · \(weekly)") }
+        case .weekly: HStack(spacing: 4) { icon; Text(weekly) }
+        case .weeklyReset:
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                HStack(spacing: 4) {
+                    icon
+                    Text(weekly + (store.weekly.flatMap { shortRemaining($0.resetsAt, now: context.date) }.map { " · \($0)" } ?? ""))
+                }
+            }
         }
     }
 }
@@ -149,7 +185,7 @@ struct MenuBarLabel: View {
 
 struct UsagePopover: View {
     let store: UsageStore
-    @AppStorage("menuBarMode") private var mode: MenuBarMode = .both
+    @AppStorage("menuBarMode") private var mode: MenuBarMode = .weekly
     @State private var hoveredDay: Int?
     @State private var opensAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginMessage: String?
@@ -250,7 +286,13 @@ struct UsagePopover: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.muted)
             } else {
-                ForEach(store.limits) { limit in
+                if let weekly = store.weekly {
+                    WeeklyHero(limit: weekly, now: now)
+                }
+                ForEach(store.scopedWeekly) { limit in
+                    LimitMeter(limit: limit, now: now, titlePrefix: "Weekly · ")
+                }
+                ForEach(store.otherLimits) { limit in
                     LimitMeter(limit: limit, now: now)
                 }
                 if !store.breakdown.isEmpty {
@@ -404,16 +446,87 @@ struct Hairline: View {
     }
 }
 
-struct LimitMeter: View {
+/// The headline weekly figure: big percent, a meter with an "even pace" tick, the reset countdown and a projection.
+struct WeeklyHero: View {
     let limit: PlanLimit
     let now: Date
 
     var body: some View {
         let severity = Severity(api: limit.severity, percent: limit.percent)
         let fraction = min(max(limit.percent / 100, 0), 1)
+        let pace = Pace(limit: limit, now: now)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Weekly · all models")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.ink)
+                Spacer(minLength: 8)
+                if let note = severity.note {
+                    Image(systemName: severity.symbol)
+                        .font(.system(size: 11))
+                        .foregroundStyle(severity.fill)
+                    Text(note)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.ink2)
+                }
+            }
+            Text(percentText(limit.percent))
+                .font(.system(size: 34, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Palette.ink)
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4).fill(severity.track)
+                    if fraction > 0 {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(severity.fill)
+                            .frame(width: max(8, geometry.size.width * fraction))
+                    }
+                    if let pace {
+                        Rectangle()
+                            .fill(Palette.ink2)
+                            .frame(width: 2, height: 14)
+                            .offset(x: geometry.size.width * min(pace.expected / 100, 1) - 1)
+                    }
+                }
+                .frame(height: 8)
+                .frame(maxHeight: .infinity, alignment: .center)
+            }
+            .frame(height: 14)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(resetDescription(limit.resetsAt, now: now))
+                    .foregroundStyle(Palette.ink2)
+                if let pace {
+                    HStack(spacing: 4) {
+                        if pace.isOver {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Palette.serious)
+                        }
+                        Text(pace.summary)
+                    }
+                    .foregroundStyle(pace.isOver ? Palette.ink : Palette.muted)
+                    Text("Tick marks an even pace: \(percentText(pace.expected)) used by now.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.muted)
+                }
+            }
+            .font(.system(size: 11))
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct LimitMeter: View {
+    let limit: PlanLimit
+    let now: Date
+    var titlePrefix = ""
+
+    var body: some View {
+        let severity = Severity(api: limit.severity, percent: limit.percent)
+        let fraction = min(max(limit.percent / 100, 0), 1)
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(limit.title)
+                Text(titlePrefix + limit.title)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Palette.ink)
                 Spacer(minLength: 8)

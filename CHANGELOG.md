@@ -3,6 +3,21 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Weekly usage is now the focus: the API no longer reports a 5-hour session limit, so the
+  menu bar shows the weekly percentage and the gauge icon follows it. The old "session"
+  menu bar setting falls back to the new default.
+- The popover leads with a large weekly figure, a meter with an even-pace tick, the reset
+  countdown and a projection of where usage lands at reset. Per-model weekly limits sit below.
+
+### Added
+- Menu bar option showing weekly percentage with days until reset.
+
+### Fixed
+- Menu bar showed `– · N%` and the gauge icon stayed at zero when no session limit was returned.
+
 ## [1.0.0] — 2026-09-19
 
 First public release.
