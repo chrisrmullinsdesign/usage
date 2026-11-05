@@ -139,11 +139,8 @@ struct WelcomeView: View {
             } else if let problem {
                 advice(for: problem)
             } else if !showingTokenField {
-                // Built from Text values rather than one interpolated string: concatenating
-                // Swift strings first would lose the markdown styling on "Always Allow".
-                (Text("macOS may ask for permission to read the Claude Code login. Choosing ")
-                 + Text("Always Allow").bold()
-                 + Text(" means it won't ask again."))
+                // A string literal, so Text parses the markdown; `Text + Text` is deprecated on macOS 26.
+                Text("macOS may ask for permission to read the Claude Code login. Choosing **Always Allow** means it won't ask again.")
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)

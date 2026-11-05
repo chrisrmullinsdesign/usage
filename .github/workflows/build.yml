@@ -18,7 +18,9 @@ jobs:
     name: Build universal app
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Show toolchain
         run: swift --version && sw_vers
@@ -28,8 +30,15 @@ jobs:
 
       # No signing secrets in CI. build.sh falls back to an ad-hoc signature when no
       # Developer ID certificate is present; releases are signed and notarized locally.
+      - name: Test
+        run: ./Scripts/test.sh
+        env:
+          SWIFTC_EXTRA_FLAGS: -warnings-as-errors
+
       - name: Build
         run: ./build.sh
+        env:
+          SWIFTC_EXTRA_FLAGS: -warnings-as-errors
 
       - name: Verify bundle
         run: |
@@ -38,7 +47,13 @@ jobs:
             && lipo -archs build/ClaudeUsage.app/Contents/MacOS/ClaudeUsage | grep -q 'x86_64'
           test -f build/ClaudeUsage.app/Contents/Resources/AppIcon.icns
 
-      - uses: actions/upload-artifact@v7
+      # SECURITY.md promises the hardened runtime and no entitlements; check it, don't just say it.
+      - name: Verify hardening
+        run: |
+          codesign -dvv build/ClaudeUsage.app 2>&1 | grep -q 'flags=0x10000(runtime)'
+          test -z "$(codesign -d --entitlements - build/ClaudeUsage.app 2>/dev/null)"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ClaudeUsage-adhoc-app
           path: build/ClaudeUsage.app

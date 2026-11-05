@@ -9,7 +9,7 @@ about 1,300 lines of Swift in `Sources/`.
 | | |
 |---|---|
 | **Reads** | The Keychain item `Claude Code-credentials`; its own Keychain item `ClaudeUsage manual token`; `~/.claude/projects/**/*.jsonl` |
-| **Writes** | `~/Library/Logs/ClaudeUsage.log`; its own `UserDefaults`; its own Keychain item, and only when you paste a token in |
+| **Writes** | `~/Library/Logs/ClaudeUsage.log` (owner-only); its own `UserDefaults`; its own Keychain item, and only when you paste a token in |
 | **Network** | `GET https://api.anthropic.com/api/oauth/usage`, once per refresh |
 | **Never** | Refreshes, rotates or writes the token. Uploads transcripts. Opens a port. |
 
@@ -26,6 +26,10 @@ about 1,300 lines of Swift in `Sources/`.
 - **Redirects are refused** (`RefuseRedirects` in `Sources/Usage.swift`). Without this, a
   redirect would carry the `Authorization` header to whatever host it named.
 - The URL session is ephemeral: no disk cache, no cookies, TLS 1.2 minimum.
+- A token is checked before it goes anywhere near a request header: printable ASCII, no
+  whitespace, at most 4 KB. A malformed paste or a tampered Keychain item is refused, not sent.
+- `~/Library/Logs/ClaudeUsage.log` is created owner-only (`0600`), and an older world-readable
+  log is tightened at launch.
 
 ## Pasted tokens
 
