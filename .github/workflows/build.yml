@@ -50,7 +50,8 @@ jobs:
       # SECURITY.md promises the hardened runtime and no entitlements; check it, don't just say it.
       - name: Verify hardening
         run: |
-          codesign -dvv build/ClaudeUsage.app 2>&1 | grep -q 'flags=0x10000(runtime)'
+          # Ad-hoc builds (CI) print flags=0x10002(adhoc,runtime); Developer ID builds print 0x10000(runtime).
+          codesign -dvv build/ClaudeUsage.app 2>&1 | grep -Eq 'flags=0x[0-9a-f]+\([a-z,]*runtime[a-z,]*\)'
           test -z "$(codesign -d --entitlements - build/ClaudeUsage.app 2>/dev/null)"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
