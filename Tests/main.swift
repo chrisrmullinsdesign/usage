@@ -42,10 +42,15 @@ expect(halfPace?.isOver == true)
 let slow = Pace(limit: limit(percent: 10, resetsIn: 3.5 * day, now: now), now: now)
 expect(abs((slow?.projected ?? -1) - 20) < 1e-6)
 expect(slow?.isOver == false)
-expect(slow?.summary.hasPrefix("Well under pace") == true, slow?.summary ?? "nil")
+expect(slow?.summary?.hasPrefix("Well under pace") == true, slow?.summary ?? "nil")
 
-expect(Pace(limit: limit(percent: 1, resetsIn: 7 * day - 60, now: now), now: now) == nil,
-       "too early in the window for a meaningful rate")
+// Early in the week the tick still shows, but a projection would be noise.
+let early = Pace(limit: limit(percent: 14, resetsIn: 6.2 * day, now: now), now: now)
+expect(early != nil && early?.projected == nil && early?.summary == nil && early?.isOver == false,
+       "a day-one burst must not warn that the limit will be hit")
+expect(abs((early?.expected ?? -1) - 11.43) < 0.1)
+expect(Pace(limit: limit(percent: 20, resetsIn: 5.2 * day, now: now), now: now)?.projected != nil,
+       "projection starts once a quarter of the week has passed")
 expect(limit(percent: 5, resetsIn: -60, now: now).elapsedFraction(now: now) == nil, "already reset")
 expect(limit(percent: 5, resetsIn: 8 * day, now: now).elapsedFraction(now: now) == nil, "reset further out than a week")
 expect(limit(percent: 5, resetsIn: nil, now: now).elapsedFraction(now: now) == nil, "no reset time")

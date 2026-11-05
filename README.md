@@ -13,7 +13,7 @@ The same numbers as Claude Code's `/usage`, plus the tokens Claude Code has reco
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
 ![Universal](https://img.shields.io/badge/Universal-Apple%20silicon%20%2B%20Intel-black)
 
-<img src="docs/menubar.png" width="150" alt="Menu bar showing a gauge icon, 4% · 27%">
+<img src="docs/menubar.png" width="100" alt="Menu bar showing a gauge icon and the weekly usage, 14%">
 
 </div>
 
@@ -45,7 +45,7 @@ data comes from.
 
 ## What it shows
 
-<img src="docs/popover.png" width="330" align="right" alt="The popover: plan meters, token tiles, and a seven-day column chart">
+<img src="docs/popover.png" width="330" align="right" alt="The popover: a large weekly usage figure with an even-pace tick, the per-model weekly meter, token tiles, and a seven-day column chart">
 
 **Plan limits** — from `GET https://api.anthropic.com/api/oauth/usage`
 
